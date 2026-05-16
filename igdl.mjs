@@ -1,33 +1,51 @@
+/**
+ * Instagram Downloader
+ * --------------------
+ * Creator  : rhmt
+ * Runtime  : NodeJS (MJS)
+ * Base     : https://sssinstagram.com/
+ * Raw      : https://raw.githubusercontent.com/vynaa9-create/Scraper-byrhmt/refs/heads/main/igdl.mjs
+ *
+ * Features :
+ * - Fast response
+ * - Clean parser
+ * - Reel/Post support
+ * - Ready for bot & web
+ */
+
 import fs from "node:fs/promises";
 
 const API = "https://api-wh.sssinstagram.com/api/convert";
+
+// Buat test di bot tele yg ga support argumen
+const DEMO_URL = "https://www.instagram.com/reel/DYO-SGJT6kW/";
 
 function isInstagramUrl(url) {
   return /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\//i.test(url);
 }
 
-function cleanResult(data) {
-  const downloads = Array.isArray(data?.url)
-    ? data.url
-        .map((item) => ({
-          quality: item.subname || item.quality || null,
-          type: item.type || null,
-          ext: item.ext || null,
-          url: item.url || null,
-        }))
-        .filter((item) => item.url)
-    : [];
+function cleanResult(data, code = 200) {
+  const first = Array.isArray(data?.url) ? data.url[0] : null;
+
+  if (!first?.url) {
+    return {
+      status: false,
+      code,
+      error: "Media tidak ditemukan",
+    };
+  }
 
   return {
-    status: downloads.length > 0,
+    status: true,
+    code,
     title: data?.meta?.title || null,
-    source: data?.meta?.source || null,
     username: data?.meta?.username || null,
     shortcode: data?.meta?.shortcode || null,
-    likes: data?.meta?.like_count || 0,
-    comments: data?.meta?.comment_count || 0,
+    quality: first.subname || first.quality || null,
+    type: first.type || null,
+    ext: first.ext || null,
+    url: first.url,
     thumbnail: data?.thumb || null,
-    downloads,
   };
 }
 
@@ -61,9 +79,7 @@ export async function igdl(url) {
     const response = await fetch(API, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        url,
-      }),
+      body: JSON.stringify({ url }),
     });
 
     const text = await response.text();
@@ -89,12 +105,7 @@ export async function igdl(url) {
       };
     }
 
-    const result = cleanResult(json);
-
-    return {
-      ...result,
-      code: response.status,
-    };
+    return cleanResult(json, response.status);
   } catch (error) {
     return {
       status: false,
@@ -104,11 +115,11 @@ export async function igdl(url) {
   }
 }
 
-// CLI mode
+// CLI / direct run mode
 const isCli = import.meta.url === `file://${process.argv[1]}`;
 
 if (isCli) {
-  const url = process.argv[2];
+  const url = process.argv[2] || DEMO_URL;
   const save = process.argv.includes("--save");
 
   igdl(url)
@@ -140,4 +151,4 @@ if (isCli) {
 
       process.exit(1);
     });
-}
+  }
