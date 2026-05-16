@@ -1,16 +1,12 @@
 /**
- * igd
- * --------------------
+ * Instagram Downader
  * Creator  : rhmt
  * Runtime  : NodeJS (MJS)
  * Base     : https://sssinstagram.com/
  * Raw      : https://raw.githubusercontent.com/vynaa9-create/Scraper-byrhmt/refs/heads/main/igdl.mjs
  *
- * Features :
- * - Fast response
- * - Clean parser
- * - Reel/Post support
- * - Ready for bot & web
+ * note :
+ * masih pemula bg :v
  */
 
 const API = "https://api-wh.sssinstagram.com/api/convert";
@@ -22,30 +18,117 @@ function isInstagramUrl(url) {
   return /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\//i.test(url);
 }
 
-function cleanResult(data, code = 200) {
-  const first = Array.isArray(data?.url) ? data.url[0] : null;
+function detectType(url = "") {
+  const clean = url.split("?")[0].toLowerCase();
 
-  if (!first?.url) {
-    return {
-      status: false,
-      code,
-      error: "Media tidak ditemukan",
-    };
+  if (clean.endsWith(".mp4")) return "video";
+  if (clean.endsWith(".jpg")) return "image";
+  if (clean.endsWith(".jpeg")) return "image";
+  if (clean.endsWith(".png")) return "image";
+  if (clean.endsWith(".webp")) return "image";
+
+  return "media";
+}
+
+function getDirectUrl(url = "") {
+  try {
+    const parsed = new URL(url);
+    const uri = parsed.searchParams.get("uri");
+
+    if (uri && uri.startsWith("http")) {
+      return uri;
+    }
+
+    return url;
+  } catch {
+    return url;
   }
+}
+
+function cleanResult(data, input, code = 200) {
+  const items = Array.isArray(data?.url) ? data.url : [];
+
+  const results = items
+    .map((item) => {
+      const rawUrl = item?.url;
+      if (!rawUrl) return null;
+
+      const directUrl = getDirectUrl(rawUrl);
+
+      return {
+        type: item.type === "mp4" ? "video" : detectType(directUrl),
+        url: directUrl,
+      };
+    })
+    .filter(Boolean);
 
   return {
-    status: true,
+    status: results.length > 0,
     code,
-    title: data?.meta?.title || null,
-    source: data?.meta?.source || INSTAGRAM_URL,
-    username: data?.meta?.username || null,
-    shortcode: data?.meta?.shortcode || null,
-    quality: first.subname || first.quality || null,
-    type: first.type || null,
-    ext: first.ext || null,
-    url: first.url,
-    thumbnail: data?.thumb || null,
+    input,
+    total: results.length,
+    results,
+    ...(results.length === 0
+      ? {
+          error: "Media tidak ditemukan",
+        }
+      : {}),
   };
+}
+
+async function requestJsonMode(url) {
+  const response = await fetch(API, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/plain, */*",
+      "content-type": "application/json",
+      origin: "https://sssinstagram.com",
+      referer: "https://sssinstagram.com/",
+      "user-agent":
+        "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+    },
+    body: JSON.stringify({ url }),
+  });
+
+  const text = await response.text();
+
+  return {
+    code: response.status,
+    text,
+  };
+}
+
+async function requestFormMode(url) {
+  const body = new URLSearchParams();
+  body.append("url", url);
+
+  const response = await fetch(API, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/plain, */*",
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+      origin: "https://sssinstagram.com",
+      referer: "https://sssinstagram.com/",
+      "user-agent":
+        "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+    },
+    body: body.toString(),
+  });
+
+  const text = await response.text();
+
+  return {
+    code: response.status,
+    text,
+  };
+}
+
+async function parseResponse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 async function igdl(url) {
@@ -53,6 +136,9 @@ async function igdl(url) {
     return {
       status: false,
       code: 400,
+      input: url,
+      total: 0,
+      results: [],
       error: "Link Instagram kosong",
     };
   }
@@ -61,56 +147,46 @@ async function igdl(url) {
     return {
       status: false,
       code: 400,
+      input: url,
+      total: 0,
+      results: [],
       error: "Link harus Instagram reel/post/tv",
     };
   }
 
-  const headers = {
-    accept: "application/json, text/plain, */*",
-    "content-type": "application/json",
-    origin: "https://sssinstagram.com",
-    referer: "https://sssinstagram.com/",
-    "user-agent":
-      "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
-  };
-
   try {
-    const response = await fetch(API, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        url,
-      }),
-    });
+    let req = await requestJsonMode(url);
+    let json = await parseResponse(req.text);
+    let result = json ? cleanResult(json, url, req.code) : null;
 
-    const text = await response.text();
-
-    if (!response.ok) {
-      return {
-        status: false,
-        code: response.status,
-        error: text,
-      };
+    if (result?.status) {
+      return result;
     }
 
-    let json;
+    req = await requestFormMode(url);
+    json = await parseResponse(req.text);
+    result = json ? cleanResult(json, url, req.code) : null;
 
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return {
-        status: false,
-        code: 500,
-        error: "Response bukan JSON valid",
-        raw: text,
-      };
+    if (result) {
+      return result;
     }
 
-    return cleanResult(json, response.status);
+    return {
+      status: false,
+      code: req.code,
+      input: url,
+      total: 0,
+      results: [],
+      error: "Response bukan JSON valid",
+      raw: req.text.slice(0, 500),
+    };
   } catch (error) {
     return {
       status: false,
       code: 500,
+      input: url,
+      total: 0,
+      results: [],
       error: error.message,
     };
   }
@@ -126,6 +202,9 @@ igdl(INSTAGRAM_URL)
         {
           status: false,
           code: 500,
+          input: INSTAGRAM_URL,
+          total: 0,
+          results: [],
           error: error.message,
         },
         null,
