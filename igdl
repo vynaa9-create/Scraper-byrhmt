@@ -1,0 +1,137 @@
+/**
+ * igd
+ * --------------------
+ * Creator  : rhmt
+ * Runtime  : NodeJS (MJS)
+ * Base     : https://sssinstagram.com/
+ * Raw      : https://raw.githubusercontent.com/vynaa9-create/Scraper-byrhmt/refs/heads/main/igdl.mjs
+ *
+ * Features :
+ * - Fast response
+ * - Clean parser
+ * - Reel/Post support
+ * - Ready for bot & web
+ */
+
+const API = "https://api-wh.sssinstagram.com/api/convert";
+
+const INSTAGRAM_URL =
+  "https://www.instagram.com/reel/DYSDe0qJTiI/?igsh=MXFyZnIxNWw1cXR0bw==";
+
+function isInstagramUrl(url) {
+  return /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\//i.test(url);
+}
+
+function cleanResult(data, code = 200) {
+  const first = Array.isArray(data?.url) ? data.url[0] : null;
+
+  if (!first?.url) {
+    return {
+      status: false,
+      code,
+      error: "Media tidak ditemukan",
+    };
+  }
+
+  return {
+    status: true,
+    code,
+    title: data?.meta?.title || null,
+    source: data?.meta?.source || INSTAGRAM_URL,
+    username: data?.meta?.username || null,
+    shortcode: data?.meta?.shortcode || null,
+    quality: first.subname || first.quality || null,
+    type: first.type || null,
+    ext: first.ext || null,
+    url: first.url,
+    thumbnail: data?.thumb || null,
+  };
+}
+
+async function igdl(url) {
+  if (!url) {
+    return {
+      status: false,
+      code: 400,
+      error: "Link Instagram kosong",
+    };
+  }
+
+  if (!isInstagramUrl(url)) {
+    return {
+      status: false,
+      code: 400,
+      error: "Link harus Instagram reel/post/tv",
+    };
+  }
+
+  const headers = {
+    accept: "application/json, text/plain, */*",
+    "content-type": "application/json",
+    origin: "https://sssinstagram.com",
+    referer: "https://sssinstagram.com/",
+    "user-agent":
+      "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
+  };
+
+  try {
+    const response = await fetch(API, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        url,
+      }),
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      return {
+        status: false,
+        code: response.status,
+        error: text,
+      };
+    }
+
+    let json;
+
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return {
+        status: false,
+        code: 500,
+        error: "Response bukan JSON valid",
+        raw: text,
+      };
+    }
+
+    return cleanResult(json, response.status);
+  } catch (error) {
+    return {
+      status: false,
+      code: 500,
+      error: error.message,
+    };
+  }
+}
+
+igdl(INSTAGRAM_URL)
+  .then((result) => {
+    console.log(JSON.stringify(result, null, 2));
+  })
+  .catch((error) => {
+    console.log(
+      JSON.stringify(
+        {
+          status: false,
+          code: 500,
+          error: error.message,
+        },
+        null,
+        2
+      )
+    );
+
+    process.exit(1);
+  });
