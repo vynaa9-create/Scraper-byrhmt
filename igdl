@@ -4,10 +4,11 @@
  * Runtime  : NodeJS (MJS)
  * Base     : https://sssinstagram.com/
  * Raw      : https://raw.githubusercontent.com/vynaa9-create/Scraper-byrhmt/refs/heads/main/igdl.mjs
- *
  * note :
  * masih pemula bg :v
  */
+
+import fs from "node:fs/promises";
 
 const API = "https://api-wh.sssinstagram.com/api/convert";
 
@@ -18,19 +19,7 @@ function isInstagramUrl(url) {
   return /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\//i.test(url);
 }
 
-function detectType(url = "") {
-  const clean = url.split("?")[0].toLowerCase();
-
-  if (clean.endsWith(".mp4")) return "video";
-  if (clean.endsWith(".jpg")) return "image";
-  if (clean.endsWith(".jpeg")) return "image";
-  if (clean.endsWith(".png")) return "image";
-  if (clean.endsWith(".webp")) return "image";
-
-  return "media";
-}
-
-function getDirectUrl(url = "") {
+function decodeMediaUrl(url = "") {
   try {
     const parsed = new URL(url);
     const uri = parsed.searchParams.get("uri");
@@ -45,18 +34,39 @@ function getDirectUrl(url = "") {
   }
 }
 
+function detectType(item = {}, url = "") {
+  const type = String(item.type || "").toLowerCase();
+  const clean = url.split("?")[0].toLowerCase();
+
+  if (type === "mp4" || clean.endsWith(".mp4")) return "video";
+  if (
+    type === "jpg" ||
+    type === "jpeg" ||
+    type === "png" ||
+    type === "webp" ||
+    clean.endsWith(".jpg") ||
+    clean.endsWith(".jpeg") ||
+    clean.endsWith(".png") ||
+    clean.endsWith(".webp")
+  ) {
+    return "image";
+  }
+
+  return "media";
+}
+
 function cleanResult(data, input, code = 200) {
-  const items = Array.isArray(data?.url) ? data.url : [];
+  const media = Array.isArray(data?.url) ? data.url : [];
 
-  const results = items
+  const results = media
     .map((item) => {
-      const rawUrl = item?.url;
-      if (!rawUrl) return null;
+      if (!item?.url) return null;
 
-      const directUrl = getDirectUrl(rawUrl);
+      const directUrl = decodeMediaUrl(item.url);
 
       return {
-        type: item.type === "mp4" ? "video" : detectType(directUrl),
+        type: detectType(item, directUrl),
+        quality: item.subname || (item.quality ? `${item.quality}p` : null),
         url: directUrl,
       };
     })
@@ -66,6 +76,16 @@ function cleanResult(data, input, code = 200) {
     status: results.length > 0,
     code,
     input,
+    creator: "rhmt",
+    meta: {
+      title: data?.meta?.title || null,
+      username: data?.meta?.username || null,
+      source: data?.meta?.source || input,
+      shortcode: data?.meta?.shortcode || null,
+      likes: data?.meta?.like_count || 0,
+      comments: data?.meta?.comment_count || 0,
+      thumbnail: data?.thumb ? decodeMediaUrl(data.thumb) : null,
+    },
     total: results.length,
     results,
     ...(results.length === 0
@@ -76,7 +96,7 @@ function cleanResult(data, input, code = 200) {
   };
 }
 
-async function requestJsonMode(url) {
+async function requestJson(url) {
   const response = await fetch(API, {
     method: "POST",
     headers: {
@@ -87,18 +107,18 @@ async function requestJsonMode(url) {
       "user-agent":
         "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36",
     },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({
+      url,
+    }),
   });
-
-  const text = await response.text();
 
   return {
     code: response.status,
-    text,
+    text: await response.text(),
   };
 }
 
-async function requestFormMode(url) {
+async function requestForm(url) {
   const body = new URLSearchParams();
   body.append("url", url);
 
@@ -115,15 +135,13 @@ async function requestFormMode(url) {
     body: body.toString(),
   });
 
-  const text = await response.text();
-
   return {
     code: response.status,
-    text,
+    text: await response.text(),
   };
 }
 
-async function parseResponse(text) {
+function parseJson(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -131,7 +149,7 @@ async function parseResponse(text) {
   }
 }
 
-async function igdl(url) {
+export async function igdl(url = INSTAGRAM_URL) {
   if (!url) {
     return {
       status: false,
@@ -155,20 +173,19 @@ async function igdl(url) {
   }
 
   try {
-    let req = await requestJsonMode(url);
-    let json = await parseResponse(req.text);
-    let result = json ? cleanResult(json, url, req.code) : null;
+    let req = await requestJson(url);
+    let json = parseJson(req.text);
 
-    if (result?.status) {
-      return result;
+    if (json) {
+      const result = cleanResult(json, url, req.code);
+      if (result.status) return result;
     }
 
-    req = await requestFormMode(url);
-    json = await parseResponse(req.text);
-    result = json ? cleanResult(json, url, req.code) : null;
+    req = await requestForm(url);
+    json = parseJson(req.text);
 
-    if (result) {
-      return result;
+    if (json) {
+      return cleanResult(json, url, req.code);
     }
 
     return {
@@ -178,7 +195,7 @@ async function igdl(url) {
       total: 0,
       results: [],
       error: "Response bukan JSON valid",
-      raw: req.text.slice(0, 500),
+      raw_preview: req.text.slice(0, 500),
     };
   } catch (error) {
     return {
@@ -192,25 +209,47 @@ async function igdl(url) {
   }
 }
 
-igdl(INSTAGRAM_URL)
-  .then((result) => {
-    console.log(JSON.stringify(result, null, 2));
-  })
-  .catch((error) => {
-    console.log(
-      JSON.stringify(
-        {
-          status: false,
-          code: 500,
-          input: INSTAGRAM_URL,
-          total: 0,
-          results: [],
-          error: error.message,
-        },
-        null,
-        2
-      )
-    );
+// Direct run mode
+const isCli = import.meta.url === `file://${process.argv[1]}`;
 
-    process.exit(1);
-  });
+if (isCli) {
+  const customUrl = process.argv.find((arg) =>
+    /^https?:\/\/(www\.)?instagram\.com/i.test(arg)
+  );
+
+  const input = customUrl || INSTAGRAM_URL;
+  const save = process.argv.includes("--save");
+
+  igdl(input)
+    .then(async (result) => {
+      console.log(JSON.stringify(result, null, 2));
+
+      if (save) {
+        await fs.writeFile(
+          "igdl-result.json",
+          JSON.stringify(result, null, 2),
+          "utf8"
+        );
+
+        console.log("\nsaved => igdl-result.json");
+      }
+    })
+    .catch((error) => {
+      console.log(
+        JSON.stringify(
+          {
+            status: false,
+            code: 500,
+            input,
+            total: 0,
+            results: [],
+            error: error.message,
+          },
+          null,
+          2
+        )
+      );
+
+      process.exit(1);
+    });
+}
