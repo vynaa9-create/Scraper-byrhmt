@@ -1,12 +1,10 @@
 /**
  * 【 APK File Inspector 】
- *
  * Creator : rhmt
  * Base    : direct file URL
  * Desc    : Cek metadata file APK tanpa download full
- *
  * Note :
- * aman dulu cuy, cek info file tanpa nyedot APK segede gaban 🗿
+ * sisanya atur sendiri 
  */
 
 import process from "node:process";
