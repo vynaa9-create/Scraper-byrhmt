@@ -1,5 +1,5 @@
 /**
- * 【 APK File Inspector 】
+ * 【 modyolo scrape】
  * Creator : rhmt
  * Base    : direct file URL
  * Desc    : Cek metadata file APK tanpa download full
